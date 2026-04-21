@@ -10,7 +10,9 @@ Temporal-orchestrated RNA-Seq pipeline with containerized agents and MinIO artif
 - Trim: runs Trimmomatic (single or paired mode)
 - Align: runs HISAT2 + samtools sort/index
 - Count: runs featureCounts
-- DE: currently placeholder
+- DE: runs DESeq2, PCA, MA, volcano, and heatmap generation
+- Insight: runs GO enrichment and grounded AI interpretation
+- Report Builder: generates a self-contained HTML report
 
 ## Prerequisites
 
@@ -37,6 +39,12 @@ Start worker:
 
 ```bash
 python worker.py
+```
+
+Quick-start wizard:
+
+```bash
+make wizard
 ```
 
 ## Real data example (paired-end)
@@ -101,4 +109,4 @@ pytest -q tests/test_pipeline.py
 
 ## Current limitation
 
-- DE agent is still a placeholder and not yet a real statistical DE engine.
+- DNA variant-calling branch is not yet wired into the workflow and remains the next expansion path.

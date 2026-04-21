@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NGS Agent Swarm Report</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; background: #f7f8fb; color: #111; }
+    header { background: #152238; color: white; padding: 24px 32px; }
+    main { padding: 24px 32px; max-width: 1200px; margin: 0 auto; }
+    .card { background: white; border-radius: 14px; padding: 20px; margin-bottom: 18px; box-shadow: 0 4px 18px rgba(0,0,0,0.06); }
+    details { background: white; border-radius: 14px; padding: 16px 20px; margin-bottom: 14px; }
+    summary { cursor: pointer; font-weight: bold; }
+    pre { white-space: pre-wrap; word-break: break-word; }
+    .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
+    .metric { font-size: 28px; font-weight: bold; }
+    .muted { color: #666; }
+    button { background: #152238; color: white; border: 0; padding: 10px 14px; border-radius: 10px; cursor: pointer; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border-bottom: 1px solid #e8ecf3; padding: 10px; text-align: left; }
+    .search-row { display:flex; gap:12px; align-items:center; margin-bottom:12px; }
+    input[type="search"] { flex: 1; padding: 10px 12px; border-radius: 10px; border: 1px solid #cfd7e6; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>NGS Agent Swarm Report</h1>
+    <p>Self-contained interpretation and provenance report</p>
+  </header>
+  <main>
+    <section class="grid">
+      <div class="card"><div class="muted">DE Genes</div><div class="metric">{{ de.n_sig if de.n_sig is defined else 0 }}</div></div>
+      <div class="card"><div class="muted">PC1 Variance</div><div class="metric">{{ de.pc1_variance if de.pc1_variance is defined else 'n/a' }}%</div></div>
+      <div class="card"><div class="muted">AI Source</div><div class="metric">{{ insight.agent if insight.agent is defined else 'n/a' }}</div></div>
+    </section>
+
+    <div class="card">
+      <h2>AI-Generated Summary: What does this mean?</h2>
+      <button onclick="navigator.clipboard.writeText(document.getElementById('ai-summary').innerText)">Copy to Clipboard</button>
+      <pre id="ai-summary">{{ ai_summary }}</pre>
+    </div>
+
+    <details open>
+      <summary>Methods</summary>
+      <pre>{{ methods }}</pre>
+    </details>
+
+    <details>
+      <summary>DE Summary JSON</summary>
+      <pre>{{ de | tojson(indent=2) }}</pre>
+    </details>
+
+    <details>
+      <summary>Variants</summary>
+      <div class="search-row">
+        <input id="variant-search" type="search" placeholder="Search variants, genes, effects..." oninput="filterRows()" />
+      </div>
+      <table id="variants-table">
+        <thead>
+          <tr><th>Variant Data</th></tr>
+        </thead>
+        <tbody>
+        {% for line in variants_csv.splitlines() %}
+          <tr><td>{{ line }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </details>
+  </main>
+  <script>
+    function filterRows() {
+      const query = document.getElementById('variant-search').value.toLowerCase();
+      document.querySelectorAll('#variants-table tbody tr').forEach(row => {
+        row.style.display = row.innerText.toLowerCase().includes(query) ? '' : 'none';
+      });
+    }
+  </script>
+</body>
+</html>

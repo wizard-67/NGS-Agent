@@ -25,6 +25,8 @@ async def main() -> None:
             activities.align_activity,
             activities.count_activity,
             activities.de_activity,
+            activities.insight_activity,
+            activities.report_builder_activity,
         ],
     )
     await worker.run()

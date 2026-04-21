@@ -10,7 +10,9 @@ from workflows.activities import (
     count_activity,
     de_activity,
     ingest_activity,
+    insight_activity,
     qc_activity,
+    report_builder_activity,
     trim_activity,
 )
 
@@ -76,7 +78,43 @@ class NGSPipelineWorkflow:
 
         de = await workflow.execute_activity(
             de_activity,
-            args=(count, input_data.routing_context),
+            args=(
+                {
+                    **count,
+                    "sample_sheet": input_data.routing_context.get("sample_sheet"),
+                },
+                input_data.routing_context,
+            ),
+            start_to_close_timeout=timedelta(minutes=25),
+        )
+
+        insight = await workflow.execute_activity(
+            insight_activity,
+            args=(
+                {
+                    **de,
+                    "go_input": input_data.routing_context.get("go_input"),
+                },
+                input_data.routing_context,
+            ),
+            start_to_close_timeout=timedelta(minutes=15),
+        )
+
+        report = await workflow.execute_activity(
+            report_builder_activity,
+            args=(
+                {
+                    "payload": {
+                        "qc": qc,
+                        "align": align,
+                        "count": count,
+                        "de": de,
+                        "insight": insight,
+                    },
+                    "artifacts_dir": input_data.routing_context.get("artifacts_dir"),
+                },
+                input_data.routing_context,
+            ),
             start_to_close_timeout=timedelta(minutes=10),
         )
 
@@ -87,15 +125,26 @@ class NGSPipelineWorkflow:
             "bam_index": align.get("payload", {}).get("bam_index"),
             "count_matrix": count.get("payload", {}).get("count_matrix"),
             "count_summary": count.get("payload", {}).get("count_summary"),
-            "n_genes": de.get("payload", {}).get("n_up", 0)
-            + de.get("payload", {}).get("n_down", 0),
+            "de_artifacts": de.get("payload", {}).get("artifacts", {}),
+            "insight_summary": insight.get("payload", {}).get("ai_summary"),
+            "report_html": report.get("payload", {}).get("report_html"),
         }
 
         return {
             "run_id": input_data.run_id,
             "status": "complete",
             "trim_was_run": trim_was_run,
-            "agents": ["ingest", "qc", "ai_decider", "trim", "align", "count", "de"],
+            "agents": [
+                "ingest",
+                "qc",
+                "ai_decider",
+                "trim",
+                "align",
+                "count",
+                "de_agent",
+                "insight_agent",
+                "report_builder",
+            ],
             "outputs": outputs,
             "ai_decision": ai_decision.get("payload", {}),
         }

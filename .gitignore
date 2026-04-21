@@ -28,3 +28,4 @@ Thumbs.db
 # Runtime artifacts
 *.log
 *.tmp
+input.csv

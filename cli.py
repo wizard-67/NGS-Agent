@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import asyncio
+import csv
 import os
 import uuid
 from pathlib import Path
@@ -114,6 +115,46 @@ def status(run_id: str) -> None:
             click.echo(f"Result: {result}")
 
     asyncio.run(run_status())
+
+
+@cli.command()
+@click.option("--output-env", default=".env", show_default=True)
+@click.option("--output-inputs", default="input.csv", show_default=True)
+def wizard(output_env: str, output_inputs: str) -> None:
+    """Interactive setup wizard for non-technical users."""
+    experiment_type = click.prompt("Analysis type", type=click.Choice(["RNA", "DNA"]))
+    paired = click.confirm("Is the dataset paired-end?", default=True)
+    organism = click.prompt("Genome preset", type=click.Choice(["hg38", "mm10", "custom"]))
+
+    if paired:
+        fastq_r1 = click.prompt("Path to R1 FASTQ", type=str)
+        fastq_r2 = click.prompt("Path to R2 FASTQ", type=str)
+        fastq = ""
+    else:
+        fastq = click.prompt("Path to FASTQ", type=str)
+        fastq_r1 = fastq_r2 = ""
+
+    ref_genome = click.prompt("Reference genome index basename", type=str)
+    gtf = click.prompt("Annotation GTF path", type=str, default="", show_default=False)
+    sample_sheet = click.prompt("Sample sheet path", type=str, default="sample_sheet.csv", show_default=True)
+
+    env_lines = [
+        f"EXPERIMENT_TYPE={experiment_type}",
+        f"ORGANISM={organism}",
+        f"PAIRED_END={str(paired).lower()}",
+        f"REF_GENOME={ref_genome}",
+        f"GTF={gtf}",
+        f"SAMPLE_SHEET={sample_sheet}",
+    ]
+    Path(output_env).write_text("\n".join(env_lines) + "\n", encoding="utf-8")
+
+    with open(output_inputs, "w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(["fastq", "fastq_r1", "fastq_r2", "ref_genome", "gtf", "paired"])
+        writer.writerow([fastq, fastq_r1, fastq_r2, ref_genome, gtf, paired])
+
+    click.echo(f"Wrote {output_env} and {output_inputs}")
+    click.echo("Next: run `python cli.py submit` with the generated inputs or wire this into your workflow runner.")
 
 
 if __name__ == "__main__":

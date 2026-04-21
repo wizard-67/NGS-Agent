@@ -63,7 +63,17 @@ async def count_activity(inputs: Dict[str, Any], routing_ctx: Dict[str, Any]) ->
 
 @activity.defn
 async def de_activity(inputs: Dict[str, Any], routing_ctx: Dict[str, Any]) -> Dict[str, Any]:
-    return await run_agent_container("de", inputs, routing_ctx)
+    return await run_agent_container("de_agent", inputs, routing_ctx)
+
+
+@activity.defn
+async def insight_activity(inputs: Dict[str, Any], routing_ctx: Dict[str, Any]) -> Dict[str, Any]:
+    return await run_agent_container("insight_agent", inputs, routing_ctx)
+
+
+@activity.defn
+async def report_builder_activity(inputs: Dict[str, Any], routing_ctx: Dict[str, Any]) -> Dict[str, Any]:
+    return await run_agent_container("report_builder", inputs, routing_ctx)
 
 
 async def run_agent_container(

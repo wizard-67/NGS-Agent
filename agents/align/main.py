@@ -33,6 +33,11 @@ class AlignAgent(BaseAgent):
         fastq_r1 = inputs.get("fastq_r1") or inputs.get("payload", {}).get("raw_reads_r1")
         fastq_r2 = inputs.get("fastq_r2") or inputs.get("payload", {}).get("raw_reads_r2")
 
+        # Accept trimmed outputs if trim agent was executed.
+        fastq_single = fastq_single or inputs.get("payload", {}).get("fastq_path")
+        fastq_r1 = fastq_r1 or inputs.get("payload", {}).get("fastq_r1")
+        fastq_r2 = fastq_r2 or inputs.get("payload", {}).get("fastq_r2")
+
         if not fastq_single and not (fastq_r1 and fastq_r2):
             raise RuntimeError("No FASTQ input available for align agent")
 

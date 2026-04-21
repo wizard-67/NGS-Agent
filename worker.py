@@ -20,6 +20,7 @@ async def main() -> None:
         activities=[
             activities.ingest_activity,
             activities.qc_activity,
+            activities.ai_decider_activity,
             activities.trim_activity,
             activities.align_activity,
             activities.count_activity,

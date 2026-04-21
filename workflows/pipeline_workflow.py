@@ -5,6 +5,7 @@ from typing import Any, Dict
 from temporalio import workflow
 
 from workflows.activities import (
+    ai_decider_activity,
     align_activity,
     count_activity,
     de_activity,
@@ -38,11 +39,23 @@ class NGSPipelineWorkflow:
             start_to_close_timeout=timedelta(minutes=15),
         )
 
+        ai_decision = await workflow.execute_activity(
+            ai_decider_activity,
+            args=(qc, input_data.routing_context),
+            start_to_close_timeout=timedelta(minutes=5),
+        )
+
         trim_was_run = False
-        if qc.get("payload", {}).get("verdict") == "trim_required":
+        if ai_decision.get("payload", {}).get("trim", False):
+            trim_request = {
+                "payload": {
+                    **qc.get("payload", {}),
+                    "trim_params": ai_decision.get("payload", {}).get("trim_params", {}),
+                }
+            }
             align_input = await workflow.execute_activity(
                 trim_activity,
-                args=(qc, input_data.routing_context),
+                args=(trim_request, input_data.routing_context),
                 start_to_close_timeout=timedelta(minutes=30),
             )
             trim_was_run = True
@@ -77,6 +90,7 @@ class NGSPipelineWorkflow:
             "run_id": input_data.run_id,
             "status": "complete",
             "trim_was_run": trim_was_run,
-            "agents": ["ingest", "qc", "trim", "align", "count", "de"],
+            "agents": ["ingest", "qc", "ai_decider", "trim", "align", "count", "de"],
             "outputs": outputs,
+            "ai_decision": ai_decision.get("payload", {}),
         }

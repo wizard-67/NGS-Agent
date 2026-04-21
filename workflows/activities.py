@@ -42,6 +42,11 @@ async def qc_activity(inputs: Dict[str, Any], routing_ctx: Dict[str, Any]) -> Di
 
 
 @activity.defn
+async def ai_decider_activity(inputs: Dict[str, Any], routing_ctx: Dict[str, Any]) -> Dict[str, Any]:
+    return await run_agent_container("ai_decider", inputs, routing_ctx)
+
+
+@activity.defn
 async def trim_activity(inputs: Dict[str, Any], routing_ctx: Dict[str, Any]) -> Dict[str, Any]:
     return await run_agent_container("trim", inputs, routing_ctx)
 
@@ -97,6 +102,10 @@ async def run_agent_container(
         f"S3_SECRET_KEY={os.environ.get('S3_SECRET_KEY', 'minioadmin')}",
         "-e",
         f"ARTIFACT_BUCKET={os.environ.get('ARTIFACT_BUCKET', 'ngs-artifacts')}",
+        "-e",
+        f"ANTHROPIC_API_KEY={os.environ.get('ANTHROPIC_API_KEY', '')}",
+        "-e",
+        f"ANTHROPIC_MODEL={os.environ.get('ANTHROPIC_MODEL', 'claude-3-5-sonnet-20241022')}",
         f"ngs/{agent_name}-agent:latest",
     ])
 

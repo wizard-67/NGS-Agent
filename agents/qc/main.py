@@ -52,18 +52,24 @@ class QCAgent(BaseAgent):
             zip_path = Path(out_dir) / f"{base}_fastqc.zip"
 
             verdict = "pass"
+            fastqc_data = ""
             if zip_path.exists():
                 with zipfile.ZipFile(zip_path, "r") as zf:
                     summary_name = None
+                    fastqc_data_name = None
                     for name in zf.namelist():
                         if name.endswith("summary.txt"):
                             summary_name = name
-                            break
+                        if name.endswith("fastqc_data.txt"):
+                            fastqc_data_name = name
                     if summary_name:
                         with zf.open(summary_name) as summary_file:
                             summary = summary_file.read().decode("utf-8", errors="ignore")
                         if "FAIL\tPer base sequence quality" in summary:
                             verdict = "trim_required"
+                    if fastqc_data_name:
+                        with zf.open(fastqc_data_name) as data_file:
+                            fastqc_data = data_file.read().decode("utf-8", errors="ignore")
 
             if html_path.exists():
                 run_id = os.environ.get("RUN_ID", "unknown")
@@ -74,6 +80,7 @@ class QCAgent(BaseAgent):
             return {
                 "verdict": verdict,
                 "report_html": report_uri,
+                "fastqc_data": fastqc_data,
             }
 
     def execute(self, inputs, routing_ctx):
@@ -94,6 +101,7 @@ class QCAgent(BaseAgent):
                         "verdict": verdict,
                         "trim_to_bp": 150 if verdict == "pass" else 100,
                         "report_html": real["report_html"],
+                        "fastqc_data": real.get("fastqc_data", ""),
                         "qc_mode": "fastqc",
                     },
                     "reasoning": f"FastQC completed, verdict: {verdict}",
@@ -116,6 +124,7 @@ class QCAgent(BaseAgent):
                 "verdict": verdict,
                 "trim_to_bp": (drop_pos - 5) if drop_pos else 150,
                 "report_html": None,
+                "fastqc_data": "",
                 "qc_mode": "mock",
             },
             "reasoning": f"QC verdict: {verdict}. {fallback_reason}",

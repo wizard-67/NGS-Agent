@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT_DIR"
 
 echo "Building base image..."
-docker build -t ngs/base-agent:latest ./agents/base
+docker build -t ngs/base-agent:latest -f ./agents/base/Dockerfile .
 
 for agent in ingest qc trim align count de; do
   echo "Building ${agent} agent..."

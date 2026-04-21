@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import asyncio
+import os
 import uuid
+from pathlib import Path
 
 import click
 from dotenv import load_dotenv
@@ -21,8 +23,13 @@ def cli() -> None:
 @click.option("--fastq-r1", required=False, help="Path to paired-end R1 FASTQ")
 @click.option("--fastq-r2", required=False, help="Path to paired-end R2 FASTQ")
 @click.option("--experiment", default="RNA-Seq", type=click.Choice(["RNA-Seq", "WGS"]))
-@click.option("--organism", required=True, help="Organism label (e.g. human, mouse)")
-@click.option("--ref-genome", required=True, help="Reference genome index or fasta path")
+@click.option(
+    "--organism",
+    required=True,
+    type=click.Choice(["human", "mouse", "rat", "zebrafish", "yeast", "other"]),
+    help="Target organism",
+)
+@click.option("--ref-genome", required=True, help="HISAT2 index basename path")
 @click.option("--gtf", required=False, help="Annotation GTF path (required for RNA-Seq counting)")
 @click.option("--paired/--single", default=False, help="Use paired-end mode")
 def submit(
@@ -36,15 +43,28 @@ def submit(
     paired: bool,
 ) -> None:
     """Submit a new pipeline run."""
+
+    def ensure_file(path_value: str, label: str) -> None:
+        if not Path(path_value).exists() or not Path(path_value).is_file():
+            raise click.BadParameter(f"{label} does not exist or is not a file: {path_value}")
+
     if paired:
         if not fastq_r1 or not fastq_r2:
             raise click.BadParameter("--paired requires both --fastq-r1 and --fastq-r2")
+        ensure_file(fastq_r1, "--fastq-r1")
+        ensure_file(fastq_r2, "--fastq-r2")
     else:
         if not fastq:
             raise click.BadParameter("--single requires --fastq")
+        ensure_file(fastq, "--fastq")
+
+    if not Path(ref_genome).exists():
+        raise click.BadParameter(f"--ref-genome path does not exist: {ref_genome}")
 
     if experiment == "RNA-Seq" and not gtf:
         raise click.BadParameter("RNA-Seq requires --gtf")
+    if gtf:
+        ensure_file(gtf, "--gtf")
 
     run_id = f"run-{uuid.uuid4().hex[:8]}"
     routing_ctx = {
@@ -63,7 +83,8 @@ def submit(
         inputs["fastq_path"] = fastq
 
     async def run_submit() -> None:
-        client = await Client.connect("localhost:7233")
+        temporal_host = os.environ.get("TEMPORAL_HOST", "localhost:7233")
+        client = await Client.connect(temporal_host)
         handle = await client.start_workflow(
             NGSPipelineWorkflow.run,
             RunInput(run_id, experiment, routing_ctx, inputs),

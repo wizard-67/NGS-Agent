@@ -23,7 +23,7 @@ def cli() -> None:
 @click.option("--fastq", required=False, help="Path to single-end FASTQ")
 @click.option("--fastq-r1", required=False, help="Path to paired-end R1 FASTQ")
 @click.option("--fastq-r2", required=False, help="Path to paired-end R2 FASTQ")
-@click.option("--experiment", default="RNA-Seq", type=click.Choice(["RNA-Seq", "WGS"]))
+@click.option("--experiment", default="RNA-Seq", type=click.Choice(["RNA-Seq", "WGS", "WES"]))
 @click.option(
     "--organism",
     required=True,
@@ -31,7 +31,10 @@ def cli() -> None:
     help="Target organism",
 )
 @click.option("--ref-genome", required=True, help="HISAT2 index basename path")
+@click.option("--reference-fasta", required=False, help="Reference FASTA path for DNA branch tools")
 @click.option("--gtf", required=False, help="Annotation GTF path (required for RNA-Seq counting)")
+@click.option("--panel-bed", required=False, help="Optional panel BED for DNA coverage plots")
+@click.option("--known-sites", required=False, multiple=True, help="Known sites VCFs for GATK BQSR (repeatable)")
 @click.option("--paired/--single", default=False, help="Use paired-end mode")
 def submit(
     fastq: str | None,
@@ -40,7 +43,10 @@ def submit(
     experiment: str,
     organism: str,
     ref_genome: str,
+    reference_fasta: str | None,
     gtf: str | None,
+    panel_bed: str | None,
+    known_sites: tuple[str, ...],
     paired: bool,
 ) -> None:
     """Submit a new pipeline run."""
@@ -61,11 +67,19 @@ def submit(
 
     if not Path(ref_genome).exists():
         raise click.BadParameter(f"--ref-genome path does not exist: {ref_genome}")
+    if experiment in {"WGS", "WES"} and not reference_fasta:
+        raise click.BadParameter("DNA-Seq analysis requires --reference-fasta")
+    if reference_fasta:
+        ensure_file(reference_fasta, "--reference-fasta")
 
     if experiment == "RNA-Seq" and not gtf:
         raise click.BadParameter("RNA-Seq requires --gtf")
     if gtf:
         ensure_file(gtf, "--gtf")
+    if panel_bed:
+        ensure_file(panel_bed, "--panel-bed")
+    for known_site in known_sites:
+        ensure_file(known_site, "--known-sites")
 
     run_id = f"run-{uuid.uuid4().hex[:8]}"
     routing_ctx = {
@@ -73,10 +87,17 @@ def submit(
         "organism": organism,
         "paired_end": paired,
         "reference_genome": ref_genome,
+        "reference_fasta": reference_fasta,
         "gtf": gtf,
+        "panel_bed": panel_bed,
+        "known_sites": list(known_sites),
         "run_id": run_id,
     }
-    inputs = {"ref_genome": ref_genome, "gtf": gtf}
+    inputs = {"ref_genome": ref_genome, "gtf": gtf, "reference_fasta": reference_fasta}
+    if panel_bed:
+        inputs["panel_bed"] = panel_bed
+    if known_sites:
+        inputs["known_sites"] = list(known_sites)
     if paired:
         inputs["fastq_r1"] = fastq_r1
         inputs["fastq_r2"] = fastq_r2

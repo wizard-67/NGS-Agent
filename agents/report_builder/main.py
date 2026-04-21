@@ -12,6 +12,11 @@ class ReportBuilderAgent(BaseAgent):
     def _write_json(self, path: Path, obj) -> None:
         path.write_text(json.dumps(obj, indent=2), encoding="utf-8")
 
+    def _materialize_uri(self, value: str, storage: MinioStorage, target: Path) -> str:
+        if isinstance(value, str) and value.startswith("s3://"):
+            return storage.download_file(value, str(target))
+        return value
+
     def execute(self, inputs, routing_ctx):
         run_id = routing_ctx.get("run_id", "unknown")
 
@@ -34,10 +39,19 @@ class ReportBuilderAgent(BaseAgent):
                 "Temporal orchestrated pipeline; command provenance should be added from workflow metadata.",
                 encoding="utf-8",
             )
-            (local_dir / "variants.csv").write_text(
-                payload.get("variants_csv", ""),
-                encoding="utf-8",
-            )
+            variants_csv = payload.get("variants_csv", "")
+            if isinstance(variants_csv, str) and variants_csv.startswith("s3://"):
+                variants_csv = self._materialize_uri(variants_csv, storage, local_dir / "variants.csv")
+            else:
+                (local_dir / "variants.csv").write_text(variants_csv, encoding="utf-8")
+
+            coverage_csv = payload.get("coverage_depth_csv")
+            if isinstance(coverage_csv, str) and coverage_csv.startswith("s3://"):
+                self._materialize_uri(coverage_csv, storage, local_dir / "coverage_depth.csv")
+
+            coverage_png = payload.get("coverage_depth_png")
+            if isinstance(coverage_png, str) and coverage_png.startswith("s3://"):
+                self._materialize_uri(coverage_png, storage, local_dir / "coverage_depth.png")
 
             cmd = ["python3", "/app/report_builder.py", "--artifacts-dir", str(local_dir), "--output", str(Path(workdir) / "index.html")]
             result = subprocess.run(cmd, capture_output=True, text=True)

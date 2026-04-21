@@ -57,6 +57,21 @@ async def align_activity(inputs: Dict[str, Any], routing_ctx: Dict[str, Any]) ->
 
 
 @activity.defn
+async def bwa_activity(inputs: Dict[str, Any], routing_ctx: Dict[str, Any]) -> Dict[str, Any]:
+    return await run_agent_container("bwa_agent", inputs, routing_ctx)
+
+
+@activity.defn
+async def gatk_activity(inputs: Dict[str, Any], routing_ctx: Dict[str, Any]) -> Dict[str, Any]:
+    return await run_agent_container("gatk_agent", inputs, routing_ctx)
+
+
+@activity.defn
+async def annotation_activity(inputs: Dict[str, Any], routing_ctx: Dict[str, Any]) -> Dict[str, Any]:
+    return await run_agent_container("annotation_agent", inputs, routing_ctx)
+
+
+@activity.defn
 async def count_activity(inputs: Dict[str, Any], routing_ctx: Dict[str, Any]) -> Dict[str, Any]:
     return await run_agent_container("count", inputs, routing_ctx)
 

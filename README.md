@@ -13,6 +13,7 @@ Temporal-orchestrated RNA-Seq pipeline with containerized agents and MinIO artif
 - DE: runs DESeq2, PCA, MA, volcano, and heatmap generation
 - Insight: runs GO enrichment and grounded AI interpretation
 - Report Builder: generates a self-contained HTML report
+- DNA branch: runs BWA-MEM2, GATK calling, annotation, and coverage summaries
 
 ## Prerequisites
 
@@ -46,6 +47,11 @@ Quick-start wizard:
 ```bash
 make wizard
 ```
+
+DNA branch note:
+
+- Provide `--experiment WGS` or `--experiment WES` together with `--reference-fasta`.
+- Optionally mount a prebuilt `snpEff.jar` and set `SNPEFF_JAR=/path/to/snpEff.jar` for richer annotation.
 
 ## Real data example (paired-end)
 
@@ -93,6 +99,7 @@ python cli.py status <run-id>
 - Trimmed FASTQ: `s3://ngs-artifacts/<run_id>/trim/...`
 - BAM + BAI: `s3://ngs-artifacts/<run_id>/align/...`
 - Count matrix/summary: `s3://ngs-artifacts/<run_id>/count/...`
+- DNA BAM/VCF/annotation outputs: `s3://ngs-artifacts/<run_id>/dna/...`
 
 ## Tests
 

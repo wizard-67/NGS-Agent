@@ -1,4 +1,5 @@
 import argparse
+import base64
 import json
 from pathlib import Path
 
@@ -17,6 +18,10 @@ def build_report(artifacts_dir: Path, output_html: Path) -> None:
         p = artifacts_dir / name
         return p.read_text(encoding="utf-8") if p.exists() else ""
 
+    def load_png_b64(name: str) -> str:
+        p = artifacts_dir / name
+        return base64.b64encode(p.read_bytes()).decode("ascii") if p.exists() else ""
+
     context = {
         "qc": json.loads(load_text("qc.json") or "{}"),
         "align": json.loads(load_text("align.json") or "{}"),
@@ -26,6 +31,8 @@ def build_report(artifacts_dir: Path, output_html: Path) -> None:
         "ai_summary": load_text("ai_summary.md"),
         "methods": load_text("methods.md"),
         "variants_csv": load_text("variants.csv"),
+        "coverage_depth_png_b64": load_png_b64("coverage_depth.png"),
+        "coverage_depth_csv": load_text("coverage_depth.csv"),
     }
 
     output_html.write_text(template.render(**context), encoding="utf-8")

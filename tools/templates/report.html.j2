@@ -66,6 +66,21 @@
         </tbody>
       </table>
     </details>
+
+    {% if de and de.n_sig is defined %}
+    <details>
+      <summary>DE Plotting Notes</summary>
+      <pre>{{ de | tojson(indent=2) }}</pre>
+    </details>
+    {% endif %}
+
+    {% if coverage_depth_png_b64 is defined and coverage_depth_png_b64 %}
+    <div class="card">
+      <h2>Coverage Depth</h2>
+      <p class="muted">Coverage plot generated for the user-defined panel.</p>
+      <img src="data:image/png;base64,{{ coverage_depth_png_b64 }}" alt="Coverage depth plot" style="width:100%; border-radius: 12px;" />
+    </div>
+    {% endif %}
   </main>
   <script>
     function filterRows() {

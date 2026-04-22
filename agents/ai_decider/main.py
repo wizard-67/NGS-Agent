@@ -23,7 +23,7 @@ class AIDeciderAgent(BaseAgent):
         try:
             merged["LEADING"] = max(0, min(40, int(merged["LEADING"])))
             merged["TRAILING"] = max(0, min(40, int(merged["TRAILING"])))
-            merged["MINLEN"] = max(20, min(200, int(merged["MINLEN"])))
+            merged["MINLEN"] = max(36, min(200, int(merged["MINLEN"])))
         except Exception:
             return dict(DEFAULT_TRIM_PARAMS)
 

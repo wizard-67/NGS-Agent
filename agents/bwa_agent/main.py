@@ -88,10 +88,11 @@ class BWAMem2Agent(BaseAgent):
             sorted_bam = os.path.join(workdir, "aligned.sorted.bam")
 
             aligner = self._aligner_cmd()
+            threads = os.environ.get("AGENT_THREADS", "2")
             if aligner == "bwa-mem2":
-                base_cmd = ["bwa-mem2", "mem", ref_genome]
+                base_cmd = ["bwa-mem2", "mem", "-t", threads, ref_genome]
             else:
-                base_cmd = ["bwa", "mem", ref_genome]
+                base_cmd = ["bwa", "mem", "-t", threads, ref_genome]
 
             if fastq_r1 and fastq_r2:
                 align_cmd = base_cmd + [fastq_r1, fastq_r2]
@@ -104,9 +105,9 @@ class BWAMem2Agent(BaseAgent):
                 raise RuntimeError(f"{aligner} failed: {align_res.stderr.strip()}")
 
             subprocess.run(["samtools", "view", "-bS", sam_path, "-o", unsorted_bam], check=True, capture_output=True, text=True)
-            subprocess.run(["samtools", "sort", unsorted_bam, "-o", sorted_bam], check=True, capture_output=True, text=True)
-            subprocess.run(["samtools", "index", sorted_bam], check=True, capture_output=True, text=True)
-            flagstat = subprocess.run(["samtools", "flagstat", sorted_bam], capture_output=True, text=True, check=True).stdout
+            subprocess.run(["samtools", "sort", "-@", threads, unsorted_bam, "-o", sorted_bam], check=True, capture_output=True, text=True)
+            subprocess.run(["samtools", "index", "-@", threads, sorted_bam], check=True, capture_output=True, text=True)
+            flagstat = subprocess.run(["samtools", "flagstat", "-@", threads, sorted_bam], capture_output=True, text=True, check=True).stdout
 
             coverage_csv = None
             if panel_bed and Path(panel_bed).exists():

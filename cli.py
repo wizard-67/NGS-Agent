@@ -3,6 +3,7 @@ import asyncio
 import csv
 import os
 import uuid
+from collections import Counter
 from pathlib import Path
 
 import click
@@ -17,6 +18,11 @@ load_dotenv()
 @click.group()
 def cli() -> None:
     """NGS Agent Swarm CLI."""
+
+
+def ensure_file(path_value: str, label: str) -> None:
+    if not Path(path_value).exists() or not Path(path_value).is_file():
+        raise click.BadParameter(f"{label} does not exist or is not a file: {path_value}")
 
 
 @cli.command()
@@ -49,12 +55,7 @@ def submit(
     known_sites: tuple[str, ...],
     paired: bool,
 ) -> None:
-    """Submit a new pipeline run."""
-
-    def ensure_file(path_value: str, label: str) -> None:
-        if not Path(path_value).exists() or not Path(path_value).is_file():
-            raise click.BadParameter(f"{label} does not exist or is not a file: {path_value}")
-
+    """Submit a single pipeline run."""
     if paired:
         if not fastq_r1 or not fastq_r2:
             raise click.BadParameter("--paired requires both --fastq-r1 and --fastq-r2")
@@ -98,11 +99,18 @@ def submit(
         inputs["panel_bed"] = panel_bed
     if known_sites:
         inputs["known_sites"] = list(known_sites)
-    if paired:
-        inputs["fastq_r1"] = fastq_r1
-        inputs["fastq_r2"] = fastq_r2
-    else:
-        inputs["fastq_path"] = fastq
+    
+    # Pack as a single-sample batch to interface with NGSPipelineWorkflow
+    samples = [{
+        "sample_id": "sample-01",
+        "condition": "unknown",
+        "replicate_group": "1",
+        "species": organism,
+        "fastq_path": fastq,
+        "fastq_r1": fastq_r1,
+        "fastq_r2": fastq_r2,
+    }]
+    inputs["samples"] = samples
 
     async def run_submit() -> None:
         temporal_host = os.environ.get("TEMPORAL_HOST", "localhost:7233")
@@ -114,9 +122,95 @@ def submit(
             task_queue="ngs-pipeline",
         )
         click.echo(f"Run submitted: {run_id}")
-        click.echo(
-            f"Monitor at http://localhost:8080/namespaces/default/workflows/{handle.id}"
+        click.echo(f"Monitor at http://localhost:8080/namespaces/default/workflows/{handle.id}")
+
+    asyncio.run(run_submit())
+
+
+@cli.command()
+@click.option("--sample-sheet", required=True, help="Path to CSV sample sheet")
+@click.option("--experiment", default="RNA-Seq", type=click.Choice(["RNA-Seq", "WGS", "WES"]))
+@click.option(
+    "--organism",
+    required=True,
+    type=click.Choice(["human", "mouse", "rat", "zebrafish", "yeast", "other", "mixed"]),
+    help="Default target organism (can be overridden in sample sheet)",
+)
+@click.option("--ref-genome", required=True, help="HISAT2 index basename path")
+@click.option("--reference-fasta", required=False, help="Reference FASTA path for DNA branch tools")
+@click.option("--gtf", required=False, help="Annotation GTF path")
+@click.option("--paired/--single", default=False, help="Use paired-end mode")
+def submit_batch(
+    sample_sheet: str,
+    experiment: str,
+    organism: str,
+    ref_genome: str,
+    reference_fasta: str | None,
+    gtf: str | None,
+    paired: bool,
+) -> None:
+    """Submit a batch pipeline run using a CSV sample sheet."""
+    ensure_file(sample_sheet, "--sample-sheet")
+
+    samples = []
+    with open(sample_sheet, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            samples.append(row)
+
+    if not samples:
+        raise click.BadParameter("Sample sheet is empty")
+
+    # Pre-flight check: uniqueness
+    sample_ids = [s.get("sample_id", "") for s in samples]
+    duplicates = [item for item, count in Counter(sample_ids).items() if count > 1]
+    if duplicates:
+        raise click.BadParameter(f"Sample IDs must be unique. Found duplicates: {duplicates}")
+
+    # Pre-flight check: path validation
+    for i, row in enumerate(samples):
+        if not row.get("sample_id"):
+            raise click.BadParameter(f"Row {i+1}: missing sample_id")
+        
+        if paired:
+            if not row.get("fastq_r1") or not row.get("fastq_r2"):
+                raise click.BadParameter(f"Row {i+1}: missing fastq_r1 or fastq_r2 for paired mode")
+            ensure_file(row["fastq_r1"], f"Row {i+1} fastq_r1")
+            ensure_file(row["fastq_r2"], f"Row {i+1} fastq_r2")
+        else:
+            if not row.get("fastq"):
+                raise click.BadParameter(f"Row {i+1}: missing fastq for single mode")
+            ensure_file(row["fastq"], f"Row {i+1} fastq")
+
+    run_id = f"batch-{uuid.uuid4().hex[:8]}"
+    routing_ctx = {
+        "experiment_type": experiment,
+        "organism": organism,
+        "paired_end": paired,
+        "reference_genome": ref_genome,
+        "reference_fasta": reference_fasta,
+        "gtf": gtf,
+        "run_id": run_id,
+        "sample_sheet": sample_sheet,
+    }
+    inputs = {
+        "ref_genome": ref_genome,
+        "gtf": gtf,
+        "reference_fasta": reference_fasta,
+        "samples": samples
+    }
+
+    async def run_submit() -> None:
+        temporal_host = os.environ.get("TEMPORAL_HOST", "localhost:7233")
+        client = await Client.connect(temporal_host)
+        handle = await client.start_workflow(
+            NGSPipelineWorkflow.run,
+            RunInput(run_id, experiment, routing_ctx, inputs),
+            id=f"ngs-{run_id}",
+            task_queue="ngs-pipeline",
         )
+        click.echo(f"Batch run submitted: {run_id} ({len(samples)} samples)")
+        click.echo(f"Monitor at http://localhost:8080/namespaces/default/workflows/{handle.id}")
 
     asyncio.run(run_submit())
 
@@ -125,7 +219,6 @@ def submit(
 @click.argument("run_id")
 def status(run_id: str) -> None:
     """Get status of a run."""
-
     async def run_status() -> None:
         client = await Client.connect("localhost:7233")
         handle = client.get_workflow_handle(f"ngs-{run_id}")
@@ -140,24 +233,43 @@ def status(run_id: str) -> None:
 
 @cli.command()
 @click.option("--output-env", default=".env", show_default=True)
-@click.option("--output-inputs", default="input.csv", show_default=True)
-def wizard(output_env: str, output_inputs: str) -> None:
-    """Interactive setup wizard for non-technical users."""
-    experiment_type = click.prompt("Analysis type", type=click.Choice(["RNA", "DNA"]))
+@click.option("--output-csv", default="sample_sheet.csv", show_default=True)
+def wizard(output_env: str, output_csv: str) -> None:
+    """Interactive setup wizard for batch analysis."""
+    experiment_type = click.prompt("Analysis type", type=click.Choice(["RNA-Seq", "WGS", "WES"]))
     paired = click.confirm("Is the dataset paired-end?", default=True)
-    organism = click.prompt("Genome preset", type=click.Choice(["hg38", "mm10", "custom"]))
+    organism = click.prompt("Default genome preset", type=click.Choice(["hg38", "mm10", "mixed"]))
 
-    if paired:
-        fastq_r1 = click.prompt("Path to R1 FASTQ", type=str)
-        fastq_r2 = click.prompt("Path to R2 FASTQ", type=str)
-        fastq = ""
-    else:
-        fastq = click.prompt("Path to FASTQ", type=str)
-        fastq_r1 = fastq_r2 = ""
+    num_samples = click.prompt("How many samples to configure now?", type=int, default=2)
 
-    ref_genome = click.prompt("Reference genome index basename", type=str)
+    samples = []
+    for i in range(num_samples):
+        click.echo(f"\n--- Configuring Sample {i+1} ---")
+        sample_id = click.prompt("Sample ID", default=f"S{i+1}")
+        condition = click.prompt("Condition (e.g., control, treated)", default="control" if i == 0 else "treated")
+        replicate_group = click.prompt("Replicate group (e.g., 1, 2)", default="1")
+        species = click.prompt("Species", default=organism)
+        
+        if paired:
+            fastq_r1 = click.prompt("Path to R1 FASTQ", type=str)
+            fastq_r2 = click.prompt("Path to R2 FASTQ", type=str)
+            fastq = ""
+        else:
+            fastq = click.prompt("Path to FASTQ", type=str)
+            fastq_r1 = fastq_r2 = ""
+            
+        samples.append({
+            "sample_id": sample_id,
+            "condition": condition,
+            "replicate_group": replicate_group,
+            "species": species,
+            "fastq": fastq,
+            "fastq_r1": fastq_r1,
+            "fastq_r2": fastq_r2
+        })
+
+    ref_genome = click.prompt("\nReference genome index basename", type=str)
     gtf = click.prompt("Annotation GTF path", type=str, default="", show_default=False)
-    sample_sheet = click.prompt("Sample sheet path", type=str, default="sample_sheet.csv", show_default=True)
 
     env_lines = [
         f"EXPERIMENT_TYPE={experiment_type}",
@@ -165,17 +277,16 @@ def wizard(output_env: str, output_inputs: str) -> None:
         f"PAIRED_END={str(paired).lower()}",
         f"REF_GENOME={ref_genome}",
         f"GTF={gtf}",
-        f"SAMPLE_SHEET={sample_sheet}",
     ]
     Path(output_env).write_text("\n".join(env_lines) + "\n", encoding="utf-8")
 
-    with open(output_inputs, "w", newline="", encoding="utf-8") as handle:
-        writer = csv.writer(handle)
-        writer.writerow(["fastq", "fastq_r1", "fastq_r2", "ref_genome", "gtf", "paired"])
-        writer.writerow([fastq, fastq_r1, fastq_r2, ref_genome, gtf, paired])
+    with open(output_csv, "w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["sample_id", "condition", "replicate_group", "species", "fastq", "fastq_r1", "fastq_r2"])
+        writer.writeheader()
+        writer.writerows(samples)
 
-    click.echo(f"Wrote {output_env} and {output_inputs}")
-    click.echo("Next: run `python cli.py submit` with the generated inputs or wire this into your workflow runner.")
+    click.echo(f"\nWrote {output_env} and {output_csv}")
+    click.echo(f"Next: run `python cli.py submit-batch --sample-sheet {output_csv} --organism {organism} --ref-genome {ref_genome} {('--gtf ' + gtf) if gtf else ''}`")
 
 
 if __name__ == "__main__":

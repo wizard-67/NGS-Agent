@@ -38,8 +38,10 @@ class CountAgent(BaseAgent):
             counts_tsv = os.path.join(workdir, "counts.tsv")
             summary_txt = os.path.join(workdir, "counts.tsv.summary")
 
+            threads = os.environ.get("AGENT_THREADS", "2")
             cmd = [
                 "featureCounts",
+                "-T", threads,
                 "-a",
                 gtf,
                 "-o",

@@ -7,7 +7,7 @@ RUN apt-get update \
 	&& rm -rf /var/lib/apt/lists/*
 
 WORKDIR /agent
-RUN python3 -m pip install --no-cache-dir boto3 pydantic
+RUN python3 -m pip install --no-cache-dir boto3 pydantic anthropic
 
 COPY agents/base/base_agent.py ./base_agent.py
 COPY shared/storage.py ./storage.py

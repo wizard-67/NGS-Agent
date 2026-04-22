@@ -78,8 +78,9 @@ class QCAgent(BaseAgent):
         """Run FastQC, upload HTML, return raw results dict."""
         _log("info", "Starting FastQC", fastq=fastq_path)
 
+        threads = os.environ.get("AGENT_THREADS", "2")
         with tempfile.TemporaryDirectory(prefix="qc-") as out_dir:
-            cmd = ["fastqc", "--outdir", out_dir, fastq_path]
+            cmd = ["fastqc", "--threads", threads, "--outdir", out_dir, fastq_path]
             result = subprocess.run(cmd, capture_output=True, text=True)
             if result.returncode != 0:
                 _log("error", "FastQC failed", stderr=result.stderr.strip())
@@ -207,17 +208,13 @@ class QCAgent(BaseAgent):
             '  "verdict": "pass" | "trim_required" | "fail",\n'
             '  "reasoning": "<2-4 sentence explanation citing specific FastQC modules>",\n'
             '  "quality_summary": "<one-line overall quality assessment>",\n'
-            '  "confidence": <float 0.0-1.0>,\n'
-            '  "recommended_trim_bp": <int or null>\n'
+            '  "confidence": <float 0.0-1.0>\n'
             "}\n\n"
             "Rules:\n"
             '- "pass" = quality is good, no trimming needed.\n'
             '- "trim_required" = quality degrades in certain positions, trimming recommended.\n'
             '- "fail" = data is fundamentally unusable (extreme adapter contamination, '
             "very low quality across all positions, etc.).\n"
-            "- recommended_trim_bp: if trimming, suggest the read length to CROP to "
-            "(Trimmomatic CROP parameter); null if pass or fail.\n"
-            f"{read_len_hint}"
             "- Be conservative: only recommend trim if Per-base quality drops below Q20 "
             "or adapter content is >5%.\n\n"
             "=== FastQC Summary ===\n"
@@ -339,16 +336,10 @@ class QCAgent(BaseAgent):
         return None
 
     @classmethod
-    def _validate_ai_verdict(
-        cls, parsed: dict, actual_read_length: int | None = None,
-    ) -> dict | None:
-        """Normalize and validate the AI verdict dict.
-
-        If *actual_read_length* is known (from fastqc_data.txt), it is used
-        as the upper clamp for recommended_trim_bp instead of the generic
-        MAX_READ_BP constant.
-        """
-        if "verdict" not in parsed:
+    def _validate_ai_verdict(cls, parsed: dict) -> dict | None:
+        """Validate the JSON structure and map the verdict."""
+        required_keys = {"verdict", "reasoning", "quality_summary", "confidence"}
+        if not required_keys.issubset(parsed.keys()):
             return None
 
         verdict = cls._normalize_verdict(str(parsed["verdict"]))
@@ -358,32 +349,11 @@ class QCAgent(BaseAgent):
         confidence = float(parsed.get("confidence", 0.7))
         confidence = max(0.0, min(1.0, confidence))
 
-        # --- clamp recommended_trim_bp to a biologically sensible range ---
-        trim_bp = parsed.get("recommended_trim_bp")
-        if trim_bp is not None:
-            try:
-                trim_bp = int(trim_bp)
-            except (ValueError, TypeError):
-                trim_bp = None
-
-        if trim_bp is not None:
-            ceiling = actual_read_length if actual_read_length else cls.MAX_READ_BP
-            original = trim_bp
-            trim_bp = max(cls.MIN_USABLE_READ_BP, min(trim_bp, ceiling))
-            if trim_bp != original:
-                _log("warn",
-                     "Clamped recommended_trim_bp to biologically sensible range",
-                     original=original,
-                     clamped=trim_bp,
-                     range=f"[{cls.MIN_USABLE_READ_BP}, {ceiling}]",
-                     actual_read_length=actual_read_length)
-
         return {
             "verdict": verdict,
             "reasoning": str(parsed.get("reasoning", "AI verdict produced."))[:1200],
             "quality_summary": str(parsed.get("quality_summary", ""))[:500],
             "confidence": round(confidence, 3),
-            "recommended_trim_bp": trim_bp,
             "source": "llm",
         }
 
@@ -405,7 +375,6 @@ class QCAgent(BaseAgent):
                          f"FAIL={fails}, WARN={warns}.",
             "quality_summary": f"{fails} failures, {warns} warnings in FastQC modules.",
             "confidence": round(min(0.95, confidence), 3),
-            "recommended_trim_bp": 100 if verdict == "trim_required" else None,
             "source": "heuristic",
         }
 
@@ -448,14 +417,12 @@ class QCAgent(BaseAgent):
         )
 
         verdict = ai_verdict["verdict"]
-        trim_bp = ai_verdict.get("recommended_trim_bp")
 
         _log("info", "QC agent finished",
              run_id=run_id,
              verdict=verdict,
              source=ai_verdict["source"],
              confidence=ai_verdict["confidence"],
-             recommended_trim_bp=trim_bp,
              read_length=read_length,
              report_html=qc_result["report_html"])
 
@@ -465,7 +432,6 @@ class QCAgent(BaseAgent):
             "status": "ok",
             "payload": {
                 "verdict": verdict,
-                "trim_to_bp": trim_bp if trim_bp else (150 if verdict == "pass" else 100),
                 "report_html": qc_result["report_html"],
                 "fastqc_data": qc_result.get("fastqc_data", ""),
                 "qc_mode": "fastqc",

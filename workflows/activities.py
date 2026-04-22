@@ -103,16 +103,30 @@ async def run_agent_container(
     mount_index = [0]
     container_inputs = _replace_local_file_paths(inputs, mounts, mount_index)
 
+    # --- Resource Governor ---
+    # Default boundaries (Low/Standard profile)
+    cpus = os.environ.get("AGENT_CPUS", "2")
+    memory = os.environ.get("AGENT_MEMORY", "4g")
+
+    # High resource profile for intensive mapping/calling agents
+    if agent_name in {"align", "bwa_agent", "gatk_agent"}:
+        cpus = os.environ.get("HIGH_AGENT_CPUS", cpus)
+        memory = os.environ.get("HIGH_AGENT_MEMORY", "6g")
+
     cmd = [
         "docker",
         "run",
         "--rm",
+        f"--cpus={cpus}",
+        f"--memory={memory}",
     ]
 
     for host_path, container_path in mounts:
         cmd.extend(["-v", f"{host_path}:{container_path}:ro"])
 
     cmd.extend([
+        "-e",
+        f"AGENT_THREADS={cpus}",
         "-e",
         f"AGENT_INPUTS={json.dumps(container_inputs)}",
         "-e",
